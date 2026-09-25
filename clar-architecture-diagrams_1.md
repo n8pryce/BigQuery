@@ -1,8 +1,5 @@
 # Clar Data Platform — TO-BE architecture diagrams (Mermaid)
 
-Paste any block below into mermaid.live, GitHub, GitLab, Notion, or draw.io
-(Arrange → Insert → Advanced → Mermaid). Confluence needs a Mermaid app from
-the Marketplace; otherwise export SVG from mermaid.live and paste the image.
 
 ---
 
