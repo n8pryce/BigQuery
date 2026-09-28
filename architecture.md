@@ -1,9 +1,6 @@
 # Data platform architecture
 
-Target architecture for the Clar data platform on Google Cloud.
-Diagrams are Mermaid and render directly on GitHub — edit the code blocks, commit, and the picture updates.
 
-**Status:** proposed · **Region:** EU multi-region · **Last reviewed:** 2026-09-28
 
 ## Contents
 
