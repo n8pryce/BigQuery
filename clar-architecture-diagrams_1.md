@@ -1,22 +1,21 @@
-# Clar Data Platform — TO-BE architecture diagrams (Mermaid)
-
-
----
-
-## 1. Target platform — Datastream committed
-
+Clar Data Platform — TO-BE architecture diagrams (Mermaid)
+Paste any block below into mermaid.live, GitHub, GitLab, Notion, or draw.io
+(Arrange → Insert → Advanced → Mermaid). Confluence needs a Mermaid app from
+the Marketplace; otherwise export SVG from mermaid.live and paste the image.
+1. Target platform — Datastream committed
 Every component needed for a working platform, not only the data path.
 Solid lines carry data. Dotted lines are services that act on the platform.
-
-```mermaid
 flowchart LR
-  subgraph SRC["SOURCE SYSTEMS"]
+  subgraph SRC["SOURCE SYSTEMS - ONGOING"]
     direction TB
     MY["MySQL self-hosted<br/>binlog ROW format<br/>replication user"]
     PG["PostgreSQL on AWS<br/>wal_level = logical<br/>publication + slot"]
     TU["TUNE API"]
     GS["Google Sheets"]
-    RS["AWS Redshift<br/>history, one time only"]
+  end
+
+  subgraph LEG["LEGACY - ONE TIME ONLY"]
+    RS["AWS Redshift<br/>historical data<br/>decommissioned after load"]
   end
 
   subgraph ING["INGESTION"]
@@ -25,7 +24,7 @@ flowchart LR
     DS["Datastream<br/>two streams<br/>explicit table allowlist<br/>max staleness 15 min"]
     CR["Cloud Run job + Cloud Scheduler<br/>TUNE REST pull, hourly"]
     EXT["External table over Drive<br/>+ scheduled query snapshot"]
-    DTS["BigQuery Data Transfer Service<br/>Redshift migration"]
+    DTS["BigQuery Data Transfer Service<br/>Redshift migration<br/>runs once, then removed"]
     SM["Secret Manager<br/>DB credentials, API keys"]
   end
 
@@ -72,13 +71,94 @@ flowchart LR
   MON -.-> DS
   MON -.-> DFM
   AUD -.-> BQ
-```
+CONSUMPTION
 
----
+BIGQUERY - EU MULTI-REGION
 
-## 2. Ingestion detail — prerequisites per source
+INGESTION
 
-```mermaid
+LEGACY - ONE TIME ONLY
+
+SOURCE SYSTEMS - ONGOING
+
+BI Engine reservation
+
+Looker Studio
+
+Ad hoc SQL
+
+RAW
+raw_mysql, raw_postgres
+raw_tune, raw_sheets
+
+STAGING
+typed, deduplicated
+PII hashed + policy tags
+
+CORE
+conformed entities
+crosswalk tables
+
+MARTS
+finance, risk, ops, exec
+
+REFERENCE
+business mapping tables
+
+Private Service Connect
+or IP allowlist + SSL
+
+Datastream
+two streams
+explicit table allowlist
+max staleness 15 min
+
+Cloud Run job + Cloud Scheduler
+TUNE REST pull, hourly
+
+External table over Drive
++ scheduled query snapshot
+
+BigQuery Data Transfer Service
+Redshift migration
+runs once, then removed
+
+Secret Manager
+DB credentials, API keys
+
+AWS Redshift
+historical data
+decommissioned after load
+
+MySQL self-hosted
+binlog ROW format
+replication user
+
+PostgreSQL on AWS
+wal_level = logical
+publication + slot
+
+TUNE API
+
+Google Sheets
+
+Dataform
+models, assertions, scheduling
+
+GitHub
+Dataform + Terraform
+
+Dataplex
+catalog, profiling, quality scans
+
+Cloud Monitoring
+stream failure, workflow failure, freshness
+
+Cloud Audit Logs
+sink to clar-admin
+
+​
+2. Ingestion detail — prerequisites per source
 flowchart TB
   subgraph S1["MySQL, self-hosted"]
     A1["Enable binary logging, ROW format"]
@@ -115,13 +195,67 @@ flowchart TB
   end
   E2 --> D4["Scheduled query<br/>daily snapshot with ingest date"]
   D4 --> R4["raw_sheets<br/>native table, versioned history"]
-```
+Google Sheets
 
----
+TUNE API
 
-## 3. Layers inside BigQuery
+PostgreSQL on AWS
 
-```mermaid
+MySQL, self-hosted
+
+Share sheet with service account
+
+External table over Drive
+
+API key in Secret Manager
+
+Cloud Run job, incremental by date, idempotent
+
+Set wal_level = logical
+
+Create publication and replication slot
+
+Monitor slot lag - an unread slot fills the disk
+
+Connectivity: IP allowlist + SSL
+or Private Service Connect
+
+Enable binary logging, ROW format
+
+Create replication user
+
+Set binlog retention to survive an outage
+
+Connectivity: IP allowlist + SSL,
+SSH tunnel, or Private Service Connect
+
+Datastream stream
+Explicit table allowlist
+Max staleness 15 min
+
+raw_mysql
+one table per source table
+schema drift handled
+
+Datastream stream
+Production tables only
+not remarketing or analytical
+
+raw_postgres
+
+Cloud Scheduler
+hourly
+
+raw_tune
+
+Scheduled query
+daily snapshot with ingest date
+
+raw_sheets
+native table, versioned history
+
+​
+3. Layers inside BigQuery
 flowchart TB
   R["RAW<br/>Written only by connectors<br/>No transformations<br/>Partitioned by ingestion date<br/>Kept for the full regulatory period"]
   S["STAGING<br/>Types applied, duplicates removed<br/>Names standardised<br/>National ID hashed<br/>Policy tags on personal data"]
@@ -140,13 +274,51 @@ flowchart TB
   CHK2["Assertions<br/>uniqueness, referential integrity"]
   CHK1 -.-> S
   CHK2 -.-> C
-```
+RAW
+Written only by connectors
+No transformations
+Partitioned by ingestion date
+Kept for the full regulatory period
 
----
+STAGING
+Types applied, duplicates removed
+Names standardised
+National ID hashed
+Policy tags on personal data
 
-## 4. Migration and decommission
+CORE
+Conformed customer, partner, product, application
+Crosswalk maps source keys to one surrogate key
+Country is a column, not a separate table
 
-```mermaid
+MARTS
+One dataset per consuming team
+Only layer connected to BI
+
+REFERENCE
+Business owned mapping tables
+Product taxonomy, status mapping
+Version controlled in Git
+
+SANDBOX
+Per analyst
+30 day table expiry
+Never used by dashboards
+
+Contract check
+schema, freshness, row count
+
+Assertions
+uniqueness, referential integrity
+
+Dataform
+
+Dataform
+
+Dataform
+
+​
+4. Migration and decommission
 flowchart LR
   subgraph NOW["TODAY"]
     N1["n8n custom extract scripts"]
@@ -176,4 +348,39 @@ flowchart LR
   M4 --> D1["Decommission n8n data jobs"]
   M4 --> D2["Decommission ClickHouse"]
   M4 --> D3["Decommission Redshift"]
-```
+TARGET
+
+MIGRATION
+
+TODAY
+
+BigQuery + Dataform
+
+Looker Studio + BI Engine
+
+BigQuery Data Transfer Service
+Redshift migration connector
+one time historical load
+
+Datastream streams live
+in parallel with n8n
+
+Rebuild ClickHouse queries
+as Dataform models
+
+Parallel run and reconcile
+numbers match for one full month
+
+n8n custom extract scripts
+
+ClickHouse, local
+daily analytics
+
+AWS Redshift
+EDW
+
+Decommission n8n data jobs
+
+Decommission ClickHouse
+
+Decommission Redshift
