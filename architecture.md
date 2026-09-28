@@ -29,7 +29,7 @@ flowchart LR
   end
 
   subgraph LEG["LEGACY - ONE TIME ONLY"]
-    RS["AWS Redshift<br/>historical data<br/>decommissioned after load"]
+    RS["AWS Redshift & MySQL <br/>historical data<br/>decommissioned after load"]
   end
 
   subgraph ING["INGESTION"]
