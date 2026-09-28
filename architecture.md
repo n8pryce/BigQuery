@@ -1,7 +1,5 @@
 # Data platform architecture proposal
 
-
-
 ## Contents
 
 - [1. Target platform](#1-target-platform)
@@ -23,7 +21,7 @@ flowchart LR
   subgraph SRC["SOURCE SYSTEMS - ONGOING"]
     direction TB
     MY["MySQL self-hosted<br/>binlog ROW format<br/>replication user"]
-    PG["PostgreSQL on AWS<br/>wal_level = logical<br/>publication + slot"]
+    PG["Redshift on AWS<br/>wal_level = logical<br/>publication + slot"]
     TU["TUNE API"]
     GS["Google Sheets"]
   end
@@ -44,7 +42,7 @@ flowchart LR
 
   subgraph BQ["BIGQUERY - EU MULTI-REGION"]
     direction TB
-    RAW["RAW<br/>raw_mysql, raw_postgres<br/>raw_tune, raw_sheets"]
+    RAW["RAW<br/>raw_mysql, raw_redshift<br/>raw_tune, raw_sheets"]
     STG["STAGING<br/>typed, deduplicated<br/>PII hashed + policy tags"]
     CORE["CORE<br/>conformed entities<br/>crosswalk tables"]
     MART["MARTS<br/>finance, risk, ops, exec"]
@@ -87,10 +85,9 @@ flowchart LR
   AUD -.-> BQ
 ```
 
-Two AWS-hosted systems appear here and they are not the same job:
-
-- **PostgreSQL on AWS** is a live lending database, replicated continuously by Datastream.
-- **AWS Redshift** is the current warehouse. Its history is copied once by the BigQuery Data Transfer Service, then Redshift is decommissioned.
+- Data from **Redshift on AWS** and **Local MySQL db** should be replicated continuously by Datastream.
+- Historical Data from **Redshift on AWS** and **Local MySQL db**Its history is copied once by the BigQuery Data
+  Transfer Service.
 
 ---
 
@@ -111,7 +108,7 @@ flowchart TB
   A4 --> D1["Datastream stream<br/>Explicit table allowlist<br/>Max staleness 15 min"]
   D1 --> R1["raw_mysql<br/>one table per source table<br/>schema drift handled"]
 
-  subgraph S2["PostgreSQL on AWS"]
+  subgraph S2["redshift on AWS"]
     B1["Set wal_level = logical"]
     B2["Create publication and replication slot"]
     B3["Monitor slot lag - an unread slot fills the disk"]
@@ -208,14 +205,14 @@ flowchart LR
 
 ## Connector map
 
-| Source | Tool | Mechanism | Frequency |
-|---|---|---|---|
-| MySQL, self-hosted | Datastream | Reads the binary log, serverless CDC | Continuous, staleness configurable |
-| PostgreSQL on AWS | Datastream | Logical replication slot | Continuous, staleness configurable |
-| Google Sheets | BigQuery external table over Drive | Queried in place, snapshotted to a native table | Daily snapshot |
-| TUNE API | Cloud Run job + Cloud Scheduler | REST pull, incremental by date | Hourly |
-| AWS Redshift | BigQuery Data Transfer Service | Purpose-built migration connector | Once |
-| Google Ads *(future)* | BigQuery Data Transfer Service | First-party connector, no orchestration charge | Daily |
+| Source                | Tool                               | Mechanism                                       | Frequency                          |
+|-----------------------|------------------------------------|-------------------------------------------------|------------------------------------|
+| MySQL, self-hosted    | Datastream                         | Reads the binary log, serverless CDC            | Continuous, staleness configurable |
+| redshift on AWS       | Datastream                         | Logical replication slot                        | Continuous, staleness configurable |
+| Google Sheets         | BigQuery external table over Drive | Queried in place, snapshotted to a native table | Daily snapshot                     |
+| TUNE API              | Cloud Run job + Cloud Scheduler    | REST pull, incremental by date                  | Hourly                             |
+| AWS Redshift          | BigQuery Data Transfer Service     | Purpose-built migration connector               | Once                               |
+| Google Ads *(future)* | BigQuery Data Transfer Service     | First-party connector, no orchestration charge  | Daily                              |
 
 No table is ingested by more than one mechanism. Adding a table to a Datastream stream is a
 deliberate change, not a wildcard — see the cost note below.
@@ -224,26 +221,18 @@ deliberate change, not a wildcard — see the cost note below.
 
 ## Open decisions
 
-| Decision | Why it is open | How to close it |
-|---|---|---|
-| Datastream cost | CDC is priced per GiB processed, and a processed byte is 2–5× the source data. Streaming everything would cost several times the warehouse itself. | Measure change volume: `SHOW BINARY LOGS` on MySQL, WAL generation on PostgreSQL, for one week. |
-| Datastream vs DTS for the databases | The DTS MySQL and PostgreSQL connectors are priced in slot-hours rather than per GiB, which is an order of magnitude cheaper — but batch does not capture hard deletes. | Evaluate delete handling and watermark requirements against the measured volume. |
-| Database connectivity | Datastream must reach a self-hosted MySQL host and an AWS-hosted PostgreSQL. | Choose between IP allowlist with SSL, SSH tunnel, and Private Service Connect. Only the last needs a VPC. |
-| dbt vs Dataform | Both work. Dataform needs no infrastructure and brings its own scheduler; dbt has the larger talent pool. | Decide before the first model is written. |
+| Decision                            | Why it is open                                                                                                                                                        | How to close it                                                                                           |
+|-------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------|
+| Datastream cost                     | CDC is priced per GiB processed, and a processed byte is 2–5× the source data. Streaming everything would cost several times the warehouse itself.                    | Measure change volume: `SHOW BINARY LOGS` on MySQL, WAL generation on redshift, for one week.             |
+| Datastream vs DTS for the databases | The DTS MySQL and redshift connectors are priced in slot-hours rather than per GiB, which is an order of magnitude cheaper — but batch does not capture hard deletes. | Evaluate delete handling and watermark requirements against the measured volume.                          |
+| Database connectivity               | Datastream must reach a self-hosted MySQL host and an AWS-hosted redshift.                                                                                            | Choose between IP allowlist with SSL, SSH tunnel, and Private Service Connect. Only the last needs a VPC. |
+| dbt vs Dataform                     | Both work. Dataform needs no infrastructure and brings its own scheduler; dbt has the larger talent pool.                                                             | Decide before the first model is written.                                                                 |
 
 ### Tables that should not be replicated
 
 - The 3.5 TB of MySQL log tables — no dashboard reads them, and they would dominate the Datastream bill.
-- The PostgreSQL remarketing (0.7 TB) and analytical (0.75 TB) databases — these are already derived
+- The redshift remarketing (0.7 TB) and analytical (0.75 TB) databases — these are already derived
   data. Rebuild them as Dataform models on top of the production tables rather than paying to move them.
 
 ---
 
-## Editing these diagrams
-
-The Mermaid blocks above are the source of truth. To preview a change before committing, paste the
-block into [mermaid.live](https://mermaid.live). To use the diagrams elsewhere:
-
-- **Confluence** — a draw.io macro will import Mermaid via Arrange → Insert → Advanced → Mermaid.
-- **Slides** — export SVG or PNG from mermaid.live.
-- **Locally** — `npx @mermaid-js/mermaid-cli -i ARCHITECTURE.md -o out.md` renders every block to images.
