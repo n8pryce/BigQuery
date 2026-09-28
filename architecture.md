@@ -1,4 +1,4 @@
-# Data platform architecture
+# Data platform architecture proposal
 
 
 
